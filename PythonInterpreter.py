@@ -1,12 +1,11 @@
 """
 Python Interpreter for Interpreting Python Code
 """
+from pydantic import BaseModel
 
-# Todo make negative numbers and prefix operators work
+
 # Todo make code blocks work
 # Todo make if x in n work
-
-from pydantic import BaseModel
 
 
 class Token(BaseModel):
@@ -134,15 +133,27 @@ class PythonLexer:
                                     if char + char_peek in self.tokenizer.dbl_operator_map:
                                         self.chars.append(chunk)
                                         chunk = f"{char}"
-                                    # Check if we're in the middle of parsing a double token
+                                    # Check if we're in the middle of lexing a double operator token
                                     elif any(c in self.tokenizer.operator_map for c in chunk):
                                         chunk = chunk + char
                                         self.chars.append(chunk)
                                         chunk = ""
+
+                                    # decide if MINUS is being used for negation
+                                    elif char == "-":
+                                        if char_peek.isdigit() and not chunk.isalpha():
+                                            self.chars.append(chunk)
+                                            chunk = f"{char}"
+                                        else:
+                                            self.chars.append(chunk)
+                                            self.chars.append(char)
+                                            chunk = ""
+                                    # handling comments
                                     elif char == "#":
                                         comment_started = True
                                         self.chars.append(chunk)
                                         chunk = ""
+                                    # handling items in quotes #TODO expand for triple quotes/code blocks
                                     elif char == '"' or char == "'":
                                         quote_started = True
                                         self.chars.append(chunk)
@@ -205,6 +216,14 @@ class PythonLexer:
                     token = Token(type="IDENTIFIER", literal=string)
                     self.tokens.append(token)
 
+                elif string.startswith('"') and string.endswith('"') or string.startswith("'") and string.endswith("'"):
+                    token = Token(type="STRING", literal=string)
+                    self.tokens.append(token)
+
+                elif string.startswith("-") and string[1:].isnumeric():
+                    token = Token(type="NUMBER", literal=string)
+                    self.tokens.append(token)
+
                 else:
                     token = Token(type="ILLEGAL", literal=string)
                     self.tokens.append(token)
@@ -214,7 +233,7 @@ class PythonLexer:
         print(self.tokens)
 
 
-class BinaryOperatorNode(BaseModel):
+class BinaryOperatorStatementNode(BaseModel):
     left: str = None
     operator: str = None
     right: str = None
@@ -226,19 +245,22 @@ class ExpressionNode(BaseModel):
     right: str = None
 
 
-class LoopNode(BaseModel):
-    loop_type: str = None
-    left: str = None
-    comparison: str = None
-    right: str = None
+class IfNode(BaseModel):
+    condition: ExpressionNode = None
+    statement: str = None
+
+
+class StatementNode(BaseModel):
+    statement: Token = None
 
 
 class PythonParser:
     """
-    Using LL(1) parser
+    LL(1) parser. This is still a WIP.
     """
 
     def __init__(self, lexed_tokens=None):
+        self.tokenizer = PythonTokenizer()
         self.tokens = lexed_tokens
         self.ast = []
         self.current_token = None
@@ -250,12 +272,21 @@ class PythonParser:
     def parse_tokens(self):
 
         while self.current_token.type != "EOF":
-            if self.current_token.type in "IF":
-                self.parse_if_statement()
 
-            elif self.next_token.type in ("EQUALS", "PLUS", "MINUS", "TIMES", "DIV", "MODULO"):
+            if self.current_token.literal in self.tokenizer.keyword_map:
+                print("parsing statement", self.current_token.literal, self.next_token.literal)
+                #    self.parse_if_statement()
+
+            if self.next_token.type in ("PLUS", "MINUS", "TIMES", "DIV", "MODULO"):
+                self.parse_expression()
+
+            elif self.next_token.type == "EQUALS":
                 self.parse_binary_op_statement()
 
+            elif self.current_token.type == "IDENTIFIER":
+                self.parse_expression()
+
+            print(self.ast)
             self.advance()
 
     def advance(self):
@@ -273,9 +304,11 @@ class PythonParser:
         operator = self.current_token.literal
         self.advance()
         right = self.current_token.literal
+        print("parsing expression", left, operator, right)
         exp_node = ExpressionNode(left=left, operator=operator, right=right)
         self.ast.append(exp_node)
 
+    """
     def parse_if_statement(self):
         print("if")
         loop_type = self.current_token.type
@@ -283,13 +316,12 @@ class PythonParser:
         left = self.current_token.literal
         self.advance()
         op = self.current_token.literal
-
+        print(loop_type, left, op)
         if op == "in":
-            print("hit in", self.current_token)
             self.advance()
-            print("hit in", self.current_token)
-
-            self.parse_expression()
+            right = self.current_token.literal
+            condition = ExpressionNode(left=left, operator=op, right=right)
+            self.ast.append(IfNode(condition=condition))
         else:
             self.advance()
             right = self.current_token.literal
@@ -305,19 +337,21 @@ class PythonParser:
             if self.current_token.type != "INDENT":
                 print(self.current_token.type)
                 raise SyntaxError("Missing indent")
-            if_node = LoopNode(loop_type=loop_type, left=left, comparison=op, right=right)
-            self.ast.append(if_node)
+            # if_node = LoopNode(loop_type=loop_type, left=left, comparison=op, right=right)
+            condition = BinaryOperatorNode(left=left, operator=op, right=right)
+            self.advance()
+            # if_node = IfNode(condition=condition, statement=self.current_token.literal)
+            # self.ast.append(if_node)
+    """
 
     def parse_binary_op_statement(self):
-        print("parsing statement")
-
         identifier = self.current_token.literal
         self.advance()
         operator = self.current_token.literal
         self.advance()
         value = self.current_token.literal
 
-        bop = BinaryOperatorNode(left=identifier, operator=operator, right=value)
+        bop = BinaryOperatorStatementNode(left=identifier, operator=operator, right=value)
         self.ast.append(bop)
         print(self.ast)
 
@@ -330,8 +364,8 @@ class PythonEvaluator:
     def eval_ast(self):
         print("evaluating AST:", self.ast)
 
-        for node in self.ast:
-            print(node)
+        # for node in self.ast:
+        #    print(node)
 
 
 if __name__ == "__main__":

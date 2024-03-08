@@ -1,8 +1,11 @@
 x6b = 44 # this is a comment test
 if x6b>=56:
-    pass
-if n in "hello world":
+    print("x6b is less than 56")
+x = "h"
+if x in "hello world":
     pass
 if "w" in ["w", "6", "5"]:
     pass
-x = -6
+y = -6
+x-5
+"hello" + "world"
